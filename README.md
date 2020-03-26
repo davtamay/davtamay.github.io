@@ -1,1 +1,0 @@
-# davtamay.github.io
