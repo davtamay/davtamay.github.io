@@ -1,6 +1,6 @@
 // connect to socket.io relay server
-var socket = io("https://komodo-dev.library.illinois.edu:3000");
-// var socket = io("https://localhost:3000");
+var socket = io("https://relay.komodo-dev.library.illinois.edu");
+// var socket = io("http://localhost:3000");
 
 
 /**
@@ -23,19 +23,66 @@ var getParams = function (url) {
 };
 
 let params = getParams(window.location.href);
-console.log(params)
+console.log(params);
 
 
 
-//dummy ids
+// ids and teacher flag passed to Unity
 var session_id = Number(params.session);
 var client_id = Number(params.client);
 var isTeacher = Number(params.teacher) || 0;
+var playback_id = Number(params.playback);
+
+// Assets
+// empty assets object to be populated and passed to Unity
+// object required because Unity cannot deserialize raw Arrays, they
+// have to be inside structs... 
+// See commented out asset object for example
+var assets = { 
+    list: [
+        // {
+        //     id: 12345,
+        //     name: "Test Asset Name",
+        //     url: "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/2CylinderEngine/glTF-Embedded/2CylinderEngine.gltf",
+        //     scale: 1
+        // }
+    ] 
+};
+var assets_url = "https://api.komodo-dev.library.illinois.edu/api/portal/labs/"+ session_id.toString() + "/assets";
+var request = new XMLHttpRequest();
+request.open("GET", assets_url, true);
+request.responseType = "json";
+request.send();
+
+request.onload = function(){
+    let assets_response = request.response;
+    for (idx = 0; idx<assets_response.length; idx++)
+    {
+        asset = new Object;
+        asset.id = assets_response[idx].asset_id;
+        asset.name = assets_response[idx].asset_name;
+        asset.url = assets_response[idx].path;
+        asset.scale = 1;
+        assets.list.push(asset);
+    }
+    console.log("Retrieved assets:", JSON.stringify(assets));
+}
+
+
 
 // join session by id
 var joinIds = [session_id, client_id]
 socket.emit("join", joinIds);
 
+const startPlayback = function() {
+    console.log('playback started:', playback_id);
+    let playbackArgs = [client_id, session_id, playback_id]
+    socket.emit('playback', playbackArgs);
+}
+
+socket.on('playbackEnd', function() {
+    console.log('playback ended');
+})
 
 // To prevent the EMFILE error, clear the sendbuffer when reconnecting
 socket.on('reconnecting',function(){
@@ -54,15 +101,34 @@ socket.on('joined', function(client_id) {
 /////////////////
 const PLAYBACK_SAMPLE_RATE = 48000
 const MIC_SAMPLE_RATE = PLAYBACK_SAMPLE_RATE;
-const RECORD_BUFFER_SIZE = 1024;
+const RECORD_BUFFER_SIZE = 2048;
 
 let playContext = new AudioContext({ sampleRate: PLAYBACK_SAMPLE_RATE });
+let recordContext = new AudioContext({ sampleRate: MIC_SAMPLE_RATE });
 
-// what to do after the user has granted access to the microphone
+// after the user has granted access to the microphone
 // create recording audio source, grab raw pcm data off the audio processor node
+
+let initMic = 0;
+let enableMicrophone = function() {
+    if (initMic == 0) {
+        navigator.getUserMedia = (navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia);
+        navigator.mediaDevices.getUserMedia({ audio: { sampleRate: MIC_SAMPLE_RATE }, video: false })
+            .then(handleSuccess);
+    } else if (recordContext.state == "running") {
+        recordContext.suspend().then( () => {
+            console.log("Microphone state:", recordContext.state)
+        })
+    } else if (recordContext.state == "suspended") {
+        recordContext.resume().then( () => {
+            console.log("Microphone state:", recordContext.state)
+        })
+    };
+};
+
 const handleSuccess = function (stream) {
-    let recordContext = new AudioContext({ sampleRate: MIC_SAMPLE_RATE });
-    console.log("recordContext:", recordContext);
+    initMic = 1;
+    console.log("Microphone initialized:", recordContext);
     let recordSource = recordContext.createMediaStreamSource(stream);
     let recordProcessor = recordContext.createScriptProcessor(RECORD_BUFFER_SIZE, 1, 1); 
 
@@ -111,7 +177,7 @@ let scheduleBuffers = function(micClientId) {
         newClientPlaySource.buffer = clientAudioBuffers[micClientId].buffer;
         newClientPlaySource.connect(playContext.destination);
         if (clientAudioBuffers[micClientId].nextTime == 0) {
-            clientAudioBuffers[micClientId].nextTime = playContext.currentTime + 0.05;
+            clientAudioBuffers[micClientId].nextTime = playContext.currentTime + 0.10;
         }
         newClientPlaySource.start(clientAudioBuffers[micClientId].nextTime);
         clientAudioBuffers[micClientId].nextTime += newClientPlaySource.buffer.duration;
@@ -121,9 +187,3 @@ let scheduleBuffers = function(micClientId) {
 socket.on('micText', function(data) {
     console.log(data);
 })
-
-let enableMicrophone = function() { 
-    navigator.getUserMedia = (navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia);
-    navigator.mediaDevices.getUserMedia({ audio: { sampleRate: MIC_SAMPLE_RATE }, video: false })
-        .then(handleSuccess);
-};
