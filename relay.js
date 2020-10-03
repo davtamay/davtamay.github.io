@@ -1,5 +1,8 @@
 const RELAY_BASE_URL = "https://relay.komodo-dev.library.illinois.edu"
 // const RELAY_BASE_URL = "http://localhost:3000"
+const API_BASE_URL = "https://api.komodo-dev.library.illinois.edu/api/portal/";
+// const API_BASE_URL = "http://localhost:4040/api/portal/";
+
 
 // connect to socket.io relay server
 var socket = io(RELAY_BASE_URL);
@@ -28,36 +31,51 @@ console.log(params);
 
 
 
-// ids and teacher flag passed to Unity
+// Client and session params supplied by portal iframe src
 var session_id = Number(params.session);
 var client_id = Number(params.client);
 var isTeacher = Number(params.teacher) || 0;
 var playback_id = Number(params.playback);
 
-// Assets
-// empty assets object to be populated and passed to Unity
-// object required because Unity cannot deserialize raw Arrays, they
-// have to be inside structs... 
-// See commented out asset object for example
-var assets = { 
-    list: [
-        // {
-        //     id: 12345,
-        //     name: "Test Asset Name",
-        //     url: "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/2CylinderEngine/glTF-Embedded/2CylinderEngine.gltf",
-        //     scale: 1
-        // }
-    ] 
-};
-var assets_url = "https://api.komodo-dev.library.illinois.edu/api/portal/labs/"+ session_id.toString() + "/assets";
+// wrapper `details` object to be populated by api call and passed to Unity
+// NOTE(rob): Unity cannot deserialize raw arrays
+var details = {
+    assets: [],
+    build: "",
+    course_id: 0,
+    create_at: "",
+    description: "",
+    end_time: "",
+    session_id: 0,
+    session_name: "",
+    start_time: "",
+    users: []
+}
+
+// fetch lab details from portal api
+var url = API_BASE_URL + "labs/" + session_id.toString();
 var request = new XMLHttpRequest();
-request.open("GET", assets_url, true);
+request.open("GET", url, true);
 request.responseType = "json";
 request.send();
 
 request.onload = function(){
-    let assets_response = request.response;
-    for (idx = 0; idx<assets_response.length; idx++)
+    let res = request.response;
+    console.log(res);
+    // session details
+    details.build = res.build;
+    details.course_id = res.course_id;
+    details.create_at = res.create_at;
+    details.description = res.description;
+    details.end_time = res.end_time;
+    details.session_id = res.session_id;
+    details.session_name = res.session_name;
+    details.start_time = res.start_time;
+
+    details.users = res.users;
+    
+    let assets_response = res.assetList;
+    for (idx = 0; idx < assets_response.length; idx++)
     {
         asset = new Object;
         asset.id = assets_response[idx].asset_id;
@@ -65,12 +83,9 @@ request.onload = function(){
         asset.url = assets_response[idx].path;
         asset.isWholeObject = Boolean(assets_response[idx].is_whole_object);
         asset.scale = assets_response[idx].scale || 1;
-        assets.list.push(asset);
+        details.assets.push(asset);
     }
-    console.log("Retrieved assets:", JSON.stringify(assets));
-}
-
-
+};
 
 // join session by id
 var joinIds = [session_id, client_id]
@@ -84,7 +99,7 @@ socket.emit("join", joinIds);
 
 socket.on('playbackEnd', function() {
     console.log('playback ended');
-})
+});
 
 // To prevent the EMFILE error, clear the sendbuffer when reconnecting
 socket.on('reconnecting',function(){
