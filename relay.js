@@ -1,6 +1,6 @@
 const RELAY_BASE_URL = "https://relay.komodo-dev.library.illinois.edu"
 // const RELAY_BASE_URL = "http://localhost:3000"
-const API_BASE_URL = "https://api.komodo-dev.library.illinois.edu/";
+const API_BASE_URL = "https://api.komodo-dev.library.illinois.edu/api/portal/";
 // const API_BASE_URL = "http://localhost:4040/api/portal/";
 
 
